@@ -93,27 +93,31 @@ const commands = [
         .setDescription("Mostra o horário atual do servidor RP")
 ];
 
-// --- Registro de Comandos e Login ---
+// ... (Código do topo)
+
+// --- Registro de Comandos ---
 
 (async () => {
     try {
-        // ATENÇÃO: Se você está usando client.login("TOKEN"), você precisa definir process.env.TOKEN e process.env.CLIENT_ID 
-        // ou substituir por valores diretos. Vou usar os valores do seu código como exemplo.
-        const BOT_TOKEN = "MTQ0NTM5MDkzMTM4MDY3MDU2Ng.G13VGw.eTWkDqbpF9klSUJD8G9wYJhQYezu4Cdhu43cNQ";
-        // Você precisa do ID do seu aplicativo para registrar comandos globais:
-        // Se você não souber, substitua 'SEU_CLIENT_ID' pelo ID real do seu Bot.
-        const CLIENT_ID = '1445390931380670566'; 
+        // Agora, o TOKEN e o CLIENT_ID são lidos das variáveis de ambiente
+        const CLIENT_ID = process.env.CLIENT_ID; 
+        const BOT_TOKEN = process.env.BOT_TOKEN;
+
+        // Se a variável de ambiente não estiver definida, avisamos e paramos
+        if (!CLIENT_ID || !BOT_TOKEN) {
+            console.error("\nERRO CRÍTICO: As variáveis de ambiente CLIENT_ID ou BOT_TOKEN não estão definidas. Configure-as no seu ambiente de hospedagem.");
+            return;
+        }
 
         const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
         
-        // CORREÇÃO: Usando a variável CLIENT_ID
         await rest.put(
             Routes.applicationCommands(CLIENT_ID),
             { body: commands }
         );
         console.log("Comandos registrados com sucesso!");
     } catch (error) {
-        console.error("Erro ao registrar comandos:", error);
+        console.error("Erro ao registrar comandos (Verifique seu CLIENT ID):", error);
     }
 })();
 
@@ -192,5 +196,5 @@ client.on('interactionCreate', async (interaction) => {
 });
 
 // --- Login Final ---
-// O seu token REAL: MTQ0NTM5MDkzMTM4MDY3MDU2Ng.G13VGw.eTWkDqbpF9klSUJD8G9wYJhQYezu4Cdhu43cNQ
-client.login("MTQ0NTM5MDkzMTM4MDY3MDU2Ng.G13VGw.eTWkDqbpF9klSUJD8G9wYJhQYezu4Cdhu43cNQ");
+// O client.login agora usa a variável de ambiente
+client.login(process.env.BOT_TOKEN);
