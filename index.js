@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActivityType } = require('discord.js');
 const fs = require('fs');
 
 // --- Variáveis de Estado ---
@@ -11,7 +11,6 @@ if (fs.existsSync('tempo.json')) {
     try {
         const data = JSON.parse(fs.readFileSync('tempo.json'));
         
-        // CORREÇÃO: Tenta converter para Date e verifica validade.
         const loadedGameTime = data.gameTime ? new Date(data.gameTime) : null;
         const loadedRealTime = data.realTime ? new Date(data.realTime) : null;
         
@@ -26,46 +25,53 @@ if (fs.existsSync('tempo.json')) {
 
     } catch (e) {
         console.error("Erro ao carregar tempo.json. Iniciando com valores padrão.", e);
-        // Se houver erro de parsing, as variáveis ficam como null (padrão inicial)
     }
 }
 
 // --- Funções Auxiliares ---
 
-// Salva o estado atual no arquivo
 function save() {
     fs.writeFileSync('tempo.json', JSON.stringify({
-        // Salva as datas como strings ISO, que podem ser reconstruídas
         gameTime: gameTime ? gameTime.toISOString() : null,
         realTime: realTime ? realTime.toISOString() : null,
         rate
     }));
 }
 
-// Calcula tempo atual do jogo
 function getCurrentGameTime() {
-    // CORREÇÃO: Primeira verificação para evitar o erro de cálculo
+    // Retorna string simplificada para o status
     if (!gameTime || !realTime || isNaN(gameTime.getTime()) || isNaN(realTime.getTime())) {
-        return "Horário não configurado. Use /sethora primeiro.";
+        return "Horário não configurado."; 
     }
 
     const now = new Date();
     
-    // Calcula a diferença de tempo real em segundos
-    const diffReal = (now.getTime() - realTime.getTime()) / 1000;
+    const diffRealMs = now.getTime() - realTime.getTime();
     
-    // Se o tempo real não passou, o tempo de jogo também não muda
-    if (diffReal <= 0) {
+    if (diffRealMs <= 0) {
         return gameTime.toTimeString().split(' ')[0];
     }
     
-    // Calcula o quanto de tempo de jogo passou (diffReal * rate)
-    const gameDiff = diffReal * rate * 1000; // * 1000 para converter para milissegundos
+    const gameDiffMs = diffRealMs * rate; 
     
-    // Calcula o tempo final do jogo
-    const final = new Date(gameTime.getTime() + gameDiff);
+    const final = new Date(gameTime.getTime() + gameDiffMs);
 
+    // Retorna a hora formatada (HH:MM:SS)
     return final.toTimeString().split(' ')[0];
+}
+
+// 🎯 FUNÇÃO: Atualiza o status/atividade do bot 
+function updateStatus(client) {
+    const time = getCurrentGameTime();
+    let statusText = `🕒 RP: ${time}`;
+    
+    if (time === "Horário não configurado.") {
+        statusText = "Aguardando /sethora";
+    }
+
+    // Define o status de "Jogando" com o horário atual
+    client.user.setActivity(statusText, { type: ActivityType.Playing });
+    console.log(`[Status Update] Novo status definido: ${statusText}`);
 }
 
 // --- Discord Bot ---
@@ -74,6 +80,10 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.on('ready', () => {
     console.log(`Bot iniciado como ${client.user.tag}`);
+    
+    // Inicia e configura o intervalo de atualização do status
+    updateStatus(client);
+    setInterval(() => updateStatus(client), 60000); // 1 minuto
 });
 
 // Registrar /sethora e /horaagora e /atualizar
@@ -93,17 +103,13 @@ const commands = [
         .setDescription("Mostra o horário atual do servidor RP")
 ];
 
-// ... (Código do topo)
-
-// --- Registro de Comandos ---
+// --- Registro de Comandos (Usando Variáveis de Ambiente) ---
 
 (async () => {
     try {
-        // Agora, o TOKEN e o CLIENT_ID são lidos das variáveis de ambiente
         const CLIENT_ID = process.env.CLIENT_ID; 
         const BOT_TOKEN = process.env.BOT_TOKEN;
 
-        // Se a variável de ambiente não estiver definida, avisamos e paramos
         if (!CLIENT_ID || !BOT_TOKEN) {
             console.error("\nERRO CRÍTICO: As variáveis de ambiente CLIENT_ID ou BOT_TOKEN não estão definidas. Configure-as no seu ambiente de hospedagem.");
             return;
@@ -121,35 +127,36 @@ const commands = [
     }
 })();
 
+// --- Tratamento de Interações ---
+
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
     const cmd = interaction.commandName;
 
-    // --- Lógica do /sethora ---
     if (cmd === "sethora") {
         const hora = interaction.options.getString("hora");
         const [h, m] = hora.split(":");
         
-        // Verifica se o formato é válido
-        if (isNaN(h) || isNaN(m)) {
+        if (isNaN(h) || isNaN(m) || h === undefined || m === undefined) {
             return interaction.reply({ content: "⚠️ Formato de hora inválido. Use o formato HH:MM (Ex: 12:35).", ephemeral: true });
         }
 
-        // Cria uma nova data baseada na data/hora atual (apenas para ano/mês/dia)
         const now = new Date();
-        now.setHours(h, m, 0, 0); // Define a hora e minuto fornecidos
+        now.setHours(h, m, 0, 0);
         
         gameTime = now;
         realTime = new Date();
-        rate = 1; // Reseta a velocidade para 1x
+        rate = 1;
 
         save();
+        
+        // Atualiza o status imediatamente após definir a hora
+        updateStatus(client); 
 
         return interaction.reply(`✔ Horário definido como **${hora}** e velocidade resetada para **1.00x**!`);
     }
 
-    // --- Lógica do /atualizar ---
     if (cmd === "atualizar") {
         if (!gameTime || !realTime) {
             return interaction.reply({ content: "⚠️ Use /sethora primeiro para definir o ponto de partida.", ephemeral: true });
@@ -158,8 +165,7 @@ client.on('interactionCreate', async (interaction) => {
         const hora = interaction.options.getString("hora");
         const [h, m] = hora.split(":");
 
-        // Verifica se o formato é válido
-        if (isNaN(h) || isNaN(m)) {
+        if (isNaN(h) || isNaN(m) || h === undefined || m === undefined) {
             return interaction.reply({ content: "⚠️ Formato de hora inválido. Use o formato HH:MM (Ex: 12:40).", ephemeral: true });
         }
 
@@ -168,13 +174,11 @@ client.on('interactionCreate', async (interaction) => {
 
         const nowReal = new Date();
         
-        // Calcula a diferença em segundos (milisegundos/1000)
         const diffReal = (nowReal.getTime() - realTime.getTime()) / 1000;
         const diffGame = (nowGame.getTime() - gameTime.getTime()) / 1000;
 
-        // Evita divisão por zero se o tempo real não passou o suficiente
         if (diffReal <= 0 || diffGame <= 0) {
-            return interaction.reply({ content: "⚠️ O tempo real ou o tempo de jogo não avançaram o suficiente para calcular uma nova taxa.", ephemeral: true });
+             return interaction.reply({ content: "⚠️ O tempo real ou o tempo de jogo não avançaram o suficiente para calcular uma nova taxa.", ephemeral: true });
         }
         
         rate = diffGame / diffReal;
@@ -183,18 +187,18 @@ client.on('interactionCreate', async (interaction) => {
         realTime = nowReal;
 
         save();
+        
+        // Atualiza o status imediatamente após atualizar a taxa
+        updateStatus(client); 
 
         return interaction.reply(`🔧 Nova velocidade calculada: **${rate.toFixed(2)}x**`);
     }
 
-    // --- Lógica do /horaagora ---
     if (cmd === "horaagora") {
-        // Chama a função corrigida
         const currentTime = getCurrentGameTime();
         return interaction.reply(`🕒 Horário do servidor RP: **${currentTime}**`);
     }
 });
 
-// --- Login Final ---
-// O client.login agora usa a variável de ambiente
+// --- Login Final (Usando Variável de Ambiente) ---
 client.login(process.env.BOT_TOKEN);
