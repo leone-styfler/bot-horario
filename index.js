@@ -78,8 +78,8 @@ client.on('ready', () => {
     
     // Inicia e configura o intervalo de atualização do status
     updateStatus(client);
-    // 🎯 MUDANÇA: Intervalo reduzido para 30 segundos (30000ms) para mais precisão
-    setInterval(() => updateStatus(client), 30000); 
+    // 🎯 MUDANÇA: Intervalo reduzido para 10 segundos (30000ms) para mais precisão
+    setInterval(() => updateStatus(client), 10000); 
 });
 
 // --- Registro de Comandos (Usando Variáveis de Ambiente) ---
@@ -185,3 +185,4 @@ http.createServer((req, res) => {
 
 // --- Login Final (Usando Variável de Ambiente) ---
 client.login(process.env.BOT_TOKEN);�
+
