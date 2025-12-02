@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, ActivityType } = require('discord.js');
 const fs = require('fs');
+const http = require('http'); 
 
 // --- Variáveis de Estado ---
 let gameTime = null;
@@ -39,13 +40,11 @@ function save() {
 }
 
 function getCurrentGameTime() {
-    // Retorna string simplificada para o status
     if (!gameTime || !realTime || isNaN(gameTime.getTime()) || isNaN(realTime.getTime())) {
         return "Horário não configurado."; 
     }
 
     const now = new Date();
-    
     const diffRealMs = now.getTime() - realTime.getTime();
     
     if (diffRealMs <= 0) {
@@ -53,14 +52,11 @@ function getCurrentGameTime() {
     }
     
     const gameDiffMs = diffRealMs * rate; 
-    
-    const final = new Date(gameTime.getTime() + gameDiffMs);
+    const final = new Date(gameTime.getTime() + diffGameMs);
 
-    // Retorna a hora formatada (HH:MM:SS)
     return final.toTimeString().split(' ')[0];
 }
 
-// 🎯 FUNÇÃO: Atualiza o status/atividade do bot 
 function updateStatus(client) {
     const time = getCurrentGameTime();
     let statusText = `🕒 RP: ${time}`;
@@ -69,7 +65,6 @@ function updateStatus(client) {
         statusText = "Aguardando /sethora";
     }
 
-    // Define o status de "Jogando" com o horário atual
     client.user.setActivity(statusText, { type: ActivityType.Playing });
     console.log(`[Status Update] Novo status definido: ${statusText}`);
 }
@@ -83,25 +78,9 @@ client.on('ready', () => {
     
     // Inicia e configura o intervalo de atualização do status
     updateStatus(client);
-    setInterval(() => updateStatus(client), 60000); // 1 minuto
+    // 🎯 MUDANÇA: Intervalo reduzido para 30 segundos (30000ms) para mais precisão
+    setInterval(() => updateStatus(client), 30000); 
 });
-
-// Registrar /sethora e /horaagora e /atualizar
-const commands = [
-    new SlashCommandBuilder()
-        .setName("sethora")
-        .setDescription("Define o horário atual do servidor RP")
-        .addStringOption(o => o.setName("hora").setDescription("Ex: 12:35").setRequired(true)),
-
-    new SlashCommandBuilder()
-        .setName("atualizar")
-        .setDescription("Informa o novo horário para calcular a velocidade do tempo")
-        .addStringOption(o => o.setName("hora").setDescription("Ex: 12:40").setRequired(true)),
-
-    new SlashCommandBuilder()
-        .setName("horaagora")
-        .setDescription("Mostra o horário atual do servidor RP")
-];
 
 // --- Registro de Comandos (Usando Variáveis de Ambiente) ---
 
@@ -111,12 +90,18 @@ const commands = [
         const BOT_TOKEN = process.env.BOT_TOKEN;
 
         if (!CLIENT_ID || !BOT_TOKEN) {
-            console.error("\nERRO CRÍTICO: As variáveis de ambiente CLIENT_ID ou BOT_TOKEN não estão definidas. Configure-as no seu ambiente de hospedagem.");
+            console.error("\nERRO CRÍTICO: As variáveis de ambiente CLIENT_ID ou BOT_TOKEN não estão definidas.");
             return;
         }
 
         const rest = new REST({ version: '10' }).setToken(BOT_TOKEN);
         
+        const commands = [
+            new SlashCommandBuilder().setName("sethora").setDescription("Define o horário atual do servidor RP").addStringOption(o => o.setName("hora").setDescription("Ex: 12:35").setRequired(true)),
+            new SlashCommandBuilder().setName("atualizar").setDescription("Informa o novo horário para calcular a velocidade do tempo").addStringOption(o => o.setName("hora").setDescription("Ex: 12:40").setRequired(true)),
+            new SlashCommandBuilder().setName("horaagora").setDescription("Mostra o horário atual do servidor RP")
+        ];
+
         await rest.put(
             Routes.applicationCommands(CLIENT_ID),
             { body: commands }
@@ -128,32 +113,25 @@ const commands = [
 })();
 
 // --- Tratamento de Interações ---
-
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-
     const cmd = interaction.commandName;
 
     if (cmd === "sethora") {
         const hora = interaction.options.getString("hora");
         const [h, m] = hora.split(":");
         
-        if (isNaN(h) || isNaN(m) || h === undefined || m === undefined) {
+        if (isNaN(h) || isNaN(m)) {
             return interaction.reply({ content: "⚠️ Formato de hora inválido. Use o formato HH:MM (Ex: 12:35).", ephemeral: true });
         }
 
         const now = new Date();
         now.setHours(h, m, 0, 0);
-        
         gameTime = now;
         realTime = new Date();
         rate = 1;
-
         save();
-        
-        // Atualiza o status imediatamente após definir a hora
         updateStatus(client); 
-
         return interaction.reply(`✔ Horário definido como **${hora}** e velocidade resetada para **1.00x**!`);
     }
 
@@ -165,13 +143,12 @@ client.on('interactionCreate', async (interaction) => {
         const hora = interaction.options.getString("hora");
         const [h, m] = hora.split(":");
 
-        if (isNaN(h) || isNaN(m) || h === undefined || m === undefined) {
+        if (isNaN(h) || isNaN(m)) {
             return interaction.reply({ content: "⚠️ Formato de hora inválido. Use o formato HH:MM (Ex: 12:40).", ephemeral: true });
         }
 
         const nowGame = new Date();
         nowGame.setHours(h, m, 0, 0);
-
         const nowReal = new Date();
         
         const diffReal = (nowReal.getTime() - realTime.getTime()) / 1000;
@@ -182,15 +159,10 @@ client.on('interactionCreate', async (interaction) => {
         }
         
         rate = diffGame / diffReal;
-
         gameTime = nowGame;
         realTime = nowReal;
-
         save();
-        
-        // Atualiza o status imediatamente após atualizar a taxa
         updateStatus(client); 
-
         return interaction.reply(`🔧 Nova velocidade calculada: **${rate.toFixed(2)}x**`);
     }
 
@@ -200,5 +172,16 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+
+// Bloco de health check para hospedagem 24/7 (Render)
+const PORT = process.env.PORT || 3000;
+
+http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Discord Bot is running and connected.');
+}).listen(PORT, () => {
+    console.log(`[Health Check] Servidor HTTP escutando na porta ${PORT}`);
+});
+
 // --- Login Final (Usando Variável de Ambiente) ---
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.BOT_TOKEN);�
